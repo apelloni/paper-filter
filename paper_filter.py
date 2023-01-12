@@ -6,13 +6,19 @@ BG_SIGMA = 5
 MONOCHROME = 1
 
 
-def blank_image(width=1024,
-                height=1024,
-                background=BG_COLOR):
+def blank_image(height=1024,
+                width=1024,
+                background: int | list = BG_COLOR):
     """
     It creates a blank image of the given background color
     """
-    img = np.full((height, width, MONOCHROME), background, np.uint8)
+    if type(background) == int:
+        img = np.full((height, width, MONOCHROME), background, np.uint8)
+    elif type(background) == list and len(background) == 3:
+        img = np.full((height, width, 3), background, np.uint8)
+    else:
+        raise TypeError
+
     return img
 
 
@@ -20,14 +26,14 @@ def add_noise(img, sigma=BG_SIGMA):
     """
     Adds noise to the existing image
     """
-    width, height, ch = img.shape
-    n = noise(width, height, sigma=sigma)
+    height, width, ch = img.shape
+    n = noise(height, width, sigma=sigma)
     img = img + n
     return img.clip(0, 255)
 
 
-def noise(width: int,
-          height: int,
+def noise(height: int,
+          width: int,
           ratio: int = 1,
           sigma=BG_SIGMA
           ):
@@ -58,12 +64,11 @@ def noise(width: int,
     if ratio > 1:
         print("noise: ", ratio)
         result = cv2.resize(result,
-                            #dsize=(width, height),
-                            dsize=(height, width),
+                            dsize=(width, height),
                             interpolation=cv2.INTER_LINEAR)
         # interpolation=cv2.INTER_CUBIC)
     #result.reshape((width, height, MONOCHROME))
-    return result.reshape((width, height, MONOCHROME))
+    return result.reshape((height, width, MONOCHROME))
     # print(np.shape(result))
     # return result
 
@@ -79,20 +84,24 @@ def texture(image,
     turbulence: defines how quickly big patterns will be replaced with the small ones. The lower
     value - the more iterations will be performed during texture generation.
     """
+    print("Convert")
     result = image.astype(float)
-    cols, rows, ch = image.shape
+    print("Convert DONE")
+    rows, cols, ch = image.shape
     # Find smallest rescaling
     ratio = 1
+    print(rows, cols)
     while True:
-        if cols % (ratio*turbulence) == 0 and rows % (ratio*turbulence) == 0:
+        if rows % (ratio*turbulence) == 0 and cols % (ratio*turbulence) == 0:
             ratio = ratio*turbulence
         else:
             break
     print(ratio)
     while not ratio == 1:
         print("texture: ", ratio)
-        result += noise(cols, rows, ratio, sigma=sigma)
+        result += noise(rows, cols, ratio, sigma=sigma)
         ratio = (ratio // turbulence) or 1
+    print("clip: ")
     cut = np.clip(result, 0, 255)
     return cut.astype(np.uint8)
 
@@ -100,22 +109,47 @@ def texture(image,
 if __name__ == '__main__':
     print("Import")
     #image = cv2.imread('BarnsleyFern2.png')
-    image = cv2.imread('2023-01-11 09.34.22-1.jpg')
+    #image = cv2.imread('2023-01-11 09.34.22-1.jpg')
+    image = cv2.imread('US10752321-20200825-D00005.png')
     #MONOCHROME = 3
     # print(image.shape)
-    #image = blank_image(width=1280, height=1024, background=230)
+    #background_color = [255, 255, 255]
+    #image = blank_image(width=512, height=1024, background=background_color)
     #image = blank_image(width=3840, height=2160, background=230)
     print(image.shape)
-    width, height, ch = image.shape
+    height, width, ch = image.shape
+
+    new_height = 2**int(np.ceil(np.log2(height)))
+    new_width = 2**int(np.ceil(np.log2(width)))
+    # extend height
+    background_color = [0, 0, 0]
+    patch_height = blank_image(height=new_height-height,
+                         width=width, background=background_color)
+    image_patched = cv2.vconcat([image, patch_height])
+    # extend width
+    patch_width = blank_image(
+        height=new_height, width=new_width-width,  background=background_color)
+    image_patched = cv2.hconcat([image_patched, patch_width])
+    print(image_patched.shape)
+
     print("Make Texture")
     #image_texture = texture(image, sigma=4, turbulence=4)
-    image_texture = texture(image, sigma=4, turbulence=4)
+    # image_texture = texture(image_patched, sigma=10, turbulence=4) # compare_1
+    image_texture = texture(image_patched, sigma=8, turbulence=2) # compare_2
+    image_texture = image_texture[:height, :width]
     print("write: texture.jpg")
+    image_texture = image_texture[:height, :width]
     cv2.imwrite('texture.jpg', image_texture)
-    print("Make Texture + Noise")
-    texture_and_noises = add_noise(image_texture, sigma=10)
-    print("write: texture-and-noise.jpg")
-    cv2.imwrite('texture-and-noise.jpg', texture_and_noises)
+
+    line_color = [0, 0, 0]
+    line = blank_image(height=height,
+                         width=20, background=line_color)
+    compare = cv2.hconcat([image,line,image_texture])
+    cv2.imwrite('compare.jpg', compare)
+    # print("Make Texture + Noise")
+    # texture_and_noises = add_noise(image_texture, sigma=10)
+    # print("write: texture-and-noise.jpg")
+    # cv2.imwrite('texture-and-noise.jpg', texture_and_noises)
 
     #print("Make Noise")
     #cv2.imwrite('noise.jpg', add_noise(blank_image(width, height), sigma=10))
